@@ -1,0 +1,23 @@
+sudo: false
+services:
+  - docker
+language: go
+go:
+  - 1.6.3
+install:
+  - go get -t -v ./...
+  - npm install --save-dev frisby
+  - npm install -g jasmine-node
+before_script:
+  - diff -u <(echo -n) <(gofmt -d -s .)
+  - go tool vet .
+  - go test -v -race ./...
+script:
+  - CGO_ENABLED=0 go build -a -installsuffix cgo ./cmd/q3errord/
+  - file q3errord
+  - ldd q3errord || true
+  - docker build -t tompscanlan/q3errord --rm=true .
+  - docker run -d -p9999:80 --name errd tompscanlan/q3errord
+  - docker logs errd
+  - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+  - docker push tompscanlan/q3errord
