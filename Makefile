@@ -2,14 +2,13 @@ TEAMID ?= 7357
 repo=tompscanlan/q3reservation
 bin=q3reservation
 
-all: docker
-local: $(bin)-local
+all: $(bin)-local
 
 $(bin): deps
 	env GOOS=linux GOARCH=amd64 go build -a -v --installsuffix cgo  ./cmd/$(bin)
 
 $(bin)-local: deps
-	go build -a -v --installsuffix cgo  -o $(bin)-local  ./cmd/$(bin)
+	go build -v -o $(bin)-local  ./cmd/$(bin)
 
 deps:
 	go get -v ./...

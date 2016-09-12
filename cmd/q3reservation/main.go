@@ -2,13 +2,15 @@ package main
 
 import (
 	//	"encoding/json"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 	apiclient "github.com/tompscanlan/labreserved/client"
-	"github.com/tompscanlan/labreserved/models"
-
 	"github.com/tompscanlan/labreserved/client/operations"
+	"github.com/tompscanlan/labreserved/models"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/tompscanlan/q3reservation"
+	"github.com/tompscanlan/q3updater"
 
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -26,6 +29,7 @@ var (
 
 	journalServer = kingpin.Flag("journal-server", "REST endpoint for the journal server").Default(journalServerDefault).OverrideDefaultFromEnvar("JOURNAL_SERVER").Short('j').String()
 	labDataServer = kingpin.Flag("labdata-server", "REST endpoint for the lab data server").Default(labDataServerDefault).OverrideDefaultFromEnvar("LABDATA_SERVER").Short('d').String()
+	updaterServer = kingpin.Flag("updater-server", "REST endpoint for the updater server").Default(updaterServerDefault).OverrideDefaultFromEnvar("UPDATER_SERVER").Short('u').String()
 	lock          = sync.RWMutex{}
 
 	Client *apiclient.Labreserved
@@ -42,6 +46,7 @@ const (
 	listenPortDefault    = "8082"
 	journalServerDefault = "http://journal.butterhead.net:8080"
 	labDataServerDefault = "labreserved.butterhead.net:2080"
+	updaterServerDefault = "http://127.0.0.1:8083"
 )
 
 func init() {
@@ -76,7 +81,7 @@ func main() {
 		rest.Get("/api/reservations/", GetAllReservations),
 		rest.Post("/api/reservations/", PostReservation),
 		rest.Get("/api/updaters/:team", GetUpdater),
-		rest.Post("/api/updaters/:team", PostUpdater),
+		rest.Put("/api/updaters/:team", PutUpdater),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -174,6 +179,87 @@ func PostReservation(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func GetUpdater(w rest.ResponseWriter, r *rest.Request) {
+
+	url := fmt.Sprintf("%s/%s", *updaterServer, "active")
+
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer resp.Body.Close()
+
+	log.Println("response Status:", resp.Status)
+	log.Println("response Headers:", resp.Header)
+	body, _ := ioutil.ReadAll(resp.Body)
+	log.Println("response Body:", string(body))
+
+	active := q3updater.NewActive()
+	err = json.Unmarshal(body, active)
+	if err != nil {
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteJson(active)
 }
-func PostUpdater(w rest.ResponseWriter, r *rest.Request) {
+func PutUpdater(w rest.ResponseWriter, r *rest.Request) {
+	active := new(q3updater.Active)
+
+	err := r.DecodeJsonPayload(active)
+	if err != nil {
+		log.Println("parsing input body: ", err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	log.Printf("got in put active: %s", active.String())
+
+	var body []byte
+
+	jsonStr, err := json.Marshal(active)
+	if err != nil {
+
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	url := fmt.Sprintf("%s/%s", *updaterServer, "active")
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonStr))
+
+	if err != nil {
+
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	defer resp.Body.Close()
+
+	fmt.Println("response Status:", resp.Status)
+	fmt.Println("response Headers:", resp.Header)
+	body, _ = ioutil.ReadAll(resp.Body)
+	fmt.Println("response Body:", string(body))
+	return
 }
