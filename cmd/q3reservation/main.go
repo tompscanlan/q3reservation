@@ -149,11 +149,31 @@ func GetAllReservations(w rest.ResponseWriter, r *rest.Request) {
 	w.WriteJson(reservations)
 }
 func PostReservation(w rest.ResponseWriter, r *rest.Request) {
+
+	params := operations.NewPostItemNameReservationParamsWithTimeout(30 * time.Second)
+
+	reservation := new(models.Reservation)
+	err := r.DecodeJsonPayload(reservation)
+	log.Printf("item: %s", reservation.String())
+	if err != nil {
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	params.Reservation = reservation
+	resp, err := Client.Operations.PostItemNameReservation(params)
+
+	if err != nil {
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteJson(resp.Payload)
+
 }
+
 func GetUpdater(w rest.ResponseWriter, r *rest.Request) {
 }
 func PostUpdater(w rest.ResponseWriter, r *rest.Request) {
-	lock.RLock()
-	//	w.WriteJson(&ServiceErrors)
-	lock.RUnlock()
 }
