@@ -22,3 +22,7 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+/q3reservation
+/q3reservation-local
+/cmd/q3reservation/q3reservation
