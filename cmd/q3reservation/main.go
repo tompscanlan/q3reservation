@@ -2,7 +2,6 @@ package main
 
 import (
 	//	"encoding/json"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	httptransport "github.com/go-openapi/runtime/client"
@@ -10,7 +9,6 @@ import (
 	apiclient "github.com/tompscanlan/labreserved/client"
 	"github.com/tompscanlan/labreserved/client/operations"
 	"github.com/tompscanlan/labreserved/models"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
@@ -18,7 +16,6 @@ import (
 
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/tompscanlan/q3reservation"
-	"github.com/tompscanlan/q3updater"
 
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -35,13 +32,6 @@ var (
 	Client *apiclient.Labreserved
 )
 
-type Reservation struct {
-	Name       string    `json:"name,omitempty"`
-	StartDate  time.Time `json:"start_date,omitempty"`
-	EndDate    time.Time `json:"end_date,omitempty"`
-	ServerName string    `json:"server_name,omitempty"`
-}
-
 const (
 	listenPortDefault    = "8082"
 	journalServerDefault = "http://journal.butterhead.net:8080"
@@ -51,7 +41,10 @@ const (
 
 func init() {
 	setupFlags()
+
 	q3reservation.Verbose = *verbose
+	q3reservation.UpdaterServer = *updaterServer
+	q3reservation.JournalServer = *journalServer
 }
 
 func setupFlags() {
@@ -80,8 +73,8 @@ func main() {
 		rest.Post("/api/servers/", PostServer),
 		rest.Get("/api/reservations/", GetAllReservations),
 		rest.Post("/api/reservations/", PostReservation),
-		rest.Get("/api/updaters/:team", GetUpdater),
-		rest.Put("/api/updaters/:team", PutUpdater),
+		rest.Get("/api/updaters/:team", q3reservation.GetUpdater),
+		rest.Put("/api/updaters/:team", q3reservation.PutUpdater),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -126,20 +119,35 @@ func PostServer(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func GetAllReservations(w rest.ResponseWriter, r *rest.Request) {
+	log.Println("get all reservations")
+
+	// the list of all reservations from the lab server
+	var reservations []q3reservation.SoapReservation
+
+	// get reservations from the lab data server
 	params := operations.NewGetItemsParamsWithTimeout(30 * time.Second)
 	resp, err := Client.Operations.GetItems(params)
 
-	var reservations []Reservation
+	if err != nil {
+		log.Println("GetAllReservations:GetItems error:", err)
+		rest.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	log.Println("data from lab service: ", resp.Payload)
 
 	// each server
 	for _, serv := range resp.Payload {
+
+		log.Printf("doing server %s", *serv.Name)
 		// each reservation per server
 		for _, reserv := range serv.Reservations {
 
 			// convert to soapui API version of a reservation
-			soapres := new(Reservation)
+			soapres := new(q3reservation.SoapReservation)
 
-			soapres.Name = *serv.Name
+			//			soapres.Name = *serv.Name
+			//			soapres.ServerName = *serv.Name
+			soapres.Name = *reserv.Username
 			soapres.ServerName = *serv.Name
 			soapres.StartDate = reserv.BeginTime()
 			soapres.EndDate = reserv.EndTime()
@@ -153,113 +161,33 @@ func GetAllReservations(w rest.ResponseWriter, r *rest.Request) {
 	}
 	w.WriteJson(reservations)
 }
+
 func PostReservation(w rest.ResponseWriter, r *rest.Request) {
 
-	params := operations.NewPostItemNameReservationParamsWithTimeout(30 * time.Second)
-
-	reservation := new(models.Reservation)
+	// pull reservation from the request
+	reservation := new(q3reservation.SoapReservation)
 	err := r.DecodeJsonPayload(reservation)
-	log.Printf("item: %s", reservation.String())
+	if err != nil {
+		log.Println(err)
+		rest.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	log.Printf("received reservation: %s", reservation.String())
+
+	jsonStr, err := json.Marshal(reservation)
 	if err != nil {
 		log.Println(err)
 		rest.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	params.Reservation = reservation
-	resp, err := Client.Operations.PostItemNameReservation(params)
-
+	entry := q3reservation.NewJournalEntry(string(jsonStr[:]))
+	err = q3reservation.PostJournalEntry(*journalServer, *entry)
 	if err != nil {
 		log.Println(err)
 		rest.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.WriteJson(resp.Payload)
-
-}
-
-func GetUpdater(w rest.ResponseWriter, r *rest.Request) {
-
-	url := fmt.Sprintf("%s/%s", *updaterServer, "active")
-
-	req, err := http.NewRequest("GET", url, nil)
-
-	if err != nil {
-
-		log.Println(err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	req.Header.Set("Accept", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Println(err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer resp.Body.Close()
-
-	log.Println("response Status:", resp.Status)
-	log.Println("response Headers:", resp.Header)
-	body, _ := ioutil.ReadAll(resp.Body)
-	log.Println("response Body:", string(body))
-
-	active := q3updater.NewActive()
-	err = json.Unmarshal(body, active)
-	if err != nil {
-		log.Println(err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.WriteJson(active)
-}
-func PutUpdater(w rest.ResponseWriter, r *rest.Request) {
-	active := new(q3updater.Active)
-
-	err := r.DecodeJsonPayload(active)
-	if err != nil {
-		log.Println("parsing input body: ", err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	log.Printf("got in put active: %s", active.String())
-
-	var body []byte
-
-	jsonStr, err := json.Marshal(active)
-	if err != nil {
-
-		log.Println(err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	url := fmt.Sprintf("%s/%s", *updaterServer, "active")
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonStr))
-
-	if err != nil {
-
-		log.Println(err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Println(err)
-		rest.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	defer resp.Body.Close()
-
-	fmt.Println("response Status:", resp.Status)
-	fmt.Println("response Headers:", resp.Header)
-	body, _ = ioutil.ReadAll(resp.Body)
-	fmt.Println("response Body:", string(body))
-	return
+	// also write the request back to the browser
+	w.WriteJson(reservation)
 }

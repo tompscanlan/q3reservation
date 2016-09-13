@@ -1,0 +1,46 @@
+version: '2'
+services:
+  journal:
+    image: tompscanlan/q3-training-journal
+    ports:
+      - 8080:8080
+    command: /q3-training-journal -apiHost localhost
+    build:
+      context: /Users/tscanlan/work/src/github.com/tdhite/q3-training-journal
+      dockerfile: Dockerfile
+
+  labdata:
+    image: tompscanlan/labreserved
+    ports:
+      - 2080:80
+      - 20443:443
+    environment:
+      BLOB_ID: 10
+      BLOB_ENDPOINT: http://blobs.vmwaredevops.appspot.com/api/v1/blobs
+    build:
+      context: /Users/tscanlan/work/src/github.com/tompscanlan/labreserved
+      dockerfile: Dockerfile
+  exceptions:
+    image: tompscanlan/q3errord
+    ports:
+      - 8081:9999
+    command:  /q3errord --port 9999 --slack-webhook https://hooks.slack.com/services/Txxxx
+    build:
+      context: /Users/tscanlan/work/src/github.com/tompscanlan/q3errord
+      dockerfile: Dockerfile
+  reservation:
+    image: tompscanlan/q3reservation
+    ports:
+      - 8082:8082
+    command:  /q3reservation --port 8082 --journal-server q3.butterhead.net:8080  --labdata-server q3.butterhead.net:2080
+    build:
+      context: /Users/tscanlan/work/src/github.com/tompscanlan/q3reservation
+      dockerfile: Dockerfile
+  updater:
+    image: tompscanlan/q3updater
+    ports:
+      - 8083:9999
+    command:  /q3updater --port 9999 --journal-server http://q3.butterhead.net:8080 --approval-server http://approval.vmwaredevops.appspot.com --labdata-server http://q3.butterhead.net:2080
+    build:
+      context: /Users/tscanlan/work/src/github.com/tompscanlan/q3updater
+      dockerfile: Dockerfile
