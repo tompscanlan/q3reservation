@@ -151,8 +151,11 @@ func GetAllReservations(w rest.ResponseWriter, r *rest.Request) {
 			soapres.ServerName = *serv.Name
 			soapres.StartDate = reserv.BeginTime()
 			soapres.EndDate = reserv.EndTime()
+			soapres.Approved = *reserv.Approved
 
 			reservations = append(reservations, *soapres)
+			log.Printf("found reservations %s", reservations)
+
 		}
 	}
 	if err != nil {
