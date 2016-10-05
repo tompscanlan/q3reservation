@@ -5,7 +5,7 @@ bin=q3reservation
 all: $(bin)-local
 
 $(bin): deps
-	env GOOS=linux GOARCH=amd64 go build -a -v --installsuffix cgo  ./cmd/$(bin)
+	CGO_ENABLED=0 go build -a -v --installsuffix cgo  ./cmd/$(bin)
 
 $(bin)-local: deps
 	go build -v -o $(bin)-local  ./cmd/$(bin)
