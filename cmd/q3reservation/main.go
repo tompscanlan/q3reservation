@@ -149,8 +149,8 @@ func GetAllReservations(w rest.ResponseWriter, r *rest.Request) {
 			//			soapres.ServerName = *serv.Name
 			soapres.Name = *reserv.Username
 			soapres.ServerName = *serv.Name
-			soapres.StartDate = reserv.BeginTime()
-			soapres.EndDate = reserv.EndTime()
+			err, soapres.StartDate = reserv.GetTime()
+			err, soapres.EndDate = reserv.GetEndTime()
 			soapres.Approved = *reserv.Approved
 
 			reservations = append(reservations, *soapres)
